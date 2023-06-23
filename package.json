@@ -1,0 +1,21 @@
+{
+  "name": "mcsnet",
+  "version": "0.1.0",
+  "description": "",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node --enable-source-maps build/index.js"
+  },
+  "dependencies": {
+    "ip6addr": "^0.2.5"
+  },
+  "devDependencies": {
+    "@types/ip6addr": "^0.2.3",
+    "@types/node": "^18.11.9",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0",
+    "eslint": "^8.25.0",
+    "typescript": "^4.8.4"
+  }
+}
