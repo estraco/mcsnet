@@ -84,7 +84,7 @@ const server = net.createServer(async (socket) => {
     if (!requestedServer) {
         console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server not found`);
 
-        socket.write(createDisconnect('Server not found'));
+        nextState.value === ConnectionState.Login && socket.write(createDisconnect('Server not found'));
 
         socket.end();
 
@@ -100,6 +100,14 @@ const server = net.createServer(async (socket) => {
             port: requestedServer.port
         });
 
+        serverSocket.pipe(socket);
+
+        for (let i = 0; i < asyncSocket.readBuffer.length; i++) {
+            serverSocket.write(asyncSocket.readBuffer[i]);
+        }
+
+        socket.pipe(serverSocket);
+
         serverSocket.on('error', (err) => {
             console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[0m ${err}`);
 
@@ -109,18 +117,25 @@ const server = net.createServer(async (socket) => {
         serverSocket.on('connect', () => {
             console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, piping data...`);
 
-            serverSocket.pipe(socket);
             serverSocket.write(handshakePacket);
-
-            socket.pipe(serverSocket);
         });
 
         return;
     }
 
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server found, getting login packet...`);
+    let loginPacket: Buffer;
 
-    const loginPacket = await asyncSocket.get();
+    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login data...`);
+
+    if (handshakePacket.length > (nextState.end + 2)) {
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Handshake packet has extra data, extracting login packet...`);
+
+        loginPacket = handshakePacket.subarray(nextState.end + 2);
+    } else {
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login packet...`);
+
+        loginPacket = await asyncSocket.get();
+    }
 
     const login = Packet.fromBuffer(loginPacket);
 
