@@ -4,6 +4,7 @@ import { DataTypes } from './datatype';
 import VarInt from './varnum';
 import ip6addr from 'ip6addr';
 import AsyncSocket from './asyncSocket';
+import fs from 'fs';
 
 export type Server = {
     public_address: string;
@@ -13,6 +14,7 @@ export type Server = {
 
 const config: {
     servers: Server[];
+    error_file?: string;
 } = {
     servers: [
         {
@@ -20,8 +22,13 @@ const config: {
             private_address: '127.0.0.1',
             port: 25560
         }
-    ]
+    ],
+    error_file: './error.png'
 };
+
+const error_data = config.error_file
+    ? `data:image/png;base64,${fs.readFileSync(config.error_file).toString('base64')}`
+    : '';
 
 export enum ConnectionState {
     Handshake = 0,
@@ -57,6 +64,8 @@ function sanitizeAddress(address: string) {
 const server = net.createServer(async (socket) => {
     socket.on('error', (err) => {
         console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[0m ${err}`);
+
+        socket.end();
     });
 
     const asyncSocket = new AsyncSocket(socket);
@@ -84,7 +93,34 @@ const server = net.createServer(async (socket) => {
     if (!requestedServer) {
         console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server not found`);
 
-        nextState.value === ConnectionState.Login && socket.write(createDisconnect('Server not found'));
+        if (nextState.value === ConnectionState.Login) {
+            socket.write(createDisconnect('Server not found'));
+        } else {
+            // mimic status ping
+            const statusPacket = new Packet(0, DataTypes.String.encode(JSON.stringify({
+                version: {
+                    name: 'Not available',
+                    protocol: -1
+                },
+                players: {
+                    max: 0,
+                    online: 0,
+                    sample: []
+                },
+                description: {
+                    text: `\u00A7cServer "${serverAddress.value}" not found`,
+                    extra: [
+                        // add more text to make it look pretty
+                        {
+                            text: '\n\u00A7cPlease check the address and try again'
+                        }
+                    ]
+                },
+                favicon: error_data
+            })));
+
+            socket.write(statusPacket.toBuffer());
+        }
 
         socket.end();
 
