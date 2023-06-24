@@ -2,7 +2,7 @@
 
 This is a Bungeecord-like proxy server for Minecraft. This allows for multiple Minecraft servers to run on one machine on separate ports, but only use one port for connecting to them. The server you connect to is dependent on the connection address set on the client.
 
-To set this up, you need to edit the `servers` object in `src/index.ts`. There is an example server already there.
+To set this up, you need to edit the `servers` object in `config.json`. There is an example server already there for both an IP-forwarded server and a non-IP-forwarded server.
 
 This proxy requires the `bungeecord` option set to `true` in the `spigot.yml` file of the servers you want to connect to. This is because the proxy uses the Bungeecord handshake to determine which server to connect to.
 
