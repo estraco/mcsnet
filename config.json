@@ -1,0 +1,16 @@
+{
+    "servers": [
+        {
+            "public_address": "localhost",
+            "private_address": "127.0.0.1",
+            "port": 25560
+        },
+        {
+            "public_address": "127.0.0.1",
+            "private_address": "127.0.0.1",
+            "port": 25561,
+            "ip_forwarding": false
+        }
+    ],
+    "error_file": "./error.png"
+}

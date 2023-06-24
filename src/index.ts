@@ -5,26 +5,9 @@ import VarInt from './varnum';
 import ip6addr from 'ip6addr';
 import AsyncSocket from './asyncSocket';
 import fs from 'fs';
+import Config from './config';
 
-export type Server = {
-    public_address: string;
-    private_address: string;
-    port: number;
-}
-
-const config: {
-    servers: Server[];
-    error_file?: string;
-} = {
-    servers: [
-        {
-            public_address: 'localhost',
-            private_address: '127.0.0.1',
-            port: 25560
-        }
-    ],
-    error_file: './error.png'
-};
+const config = new Config('./config.json');
 
 const error_data = config.error_file
     ? `data:image/png;base64,${fs.readFileSync(config.error_file).toString('base64')}`
@@ -127,9 +110,122 @@ const server = net.createServer(async (socket) => {
         return;
     }
 
-    if (nextState.value !== ConnectionState.Login) {
+    requestedServer.ip_forwarding = requestedServer.ip_forwarding ?? true;
+
+    if (requestedServer.ip_forwarding) {
+        if (nextState.value !== ConnectionState.Login) {
+            // connect to server and pipe data
+            console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m State is not login, connecting to server...`);
+
+            const serverSocket = net.createConnection({
+                host: requestedServer.private_address,
+                port: requestedServer.port
+            });
+
+            serverSocket.pipe(socket);
+
+            for (let i = 0; i < asyncSocket.readBuffer.length; i++) {
+                serverSocket.write(asyncSocket.readBuffer[i]);
+            }
+
+            socket.pipe(serverSocket);
+
+            serverSocket.on('error', (err) => {
+                console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[0m ${err}`);
+
+                socket.end();
+            });
+
+            serverSocket.on('connect', () => {
+                console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, piping data...`);
+
+                serverSocket.write(handshakePacket);
+            });
+
+            return;
+        }
+
+        let loginPacket: Buffer;
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login data...`);
+
+        if (handshakePacket.length > (nextState.end + 2)) {
+            console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Handshake packet has extra data, extracting login packet...`);
+
+            loginPacket = handshakePacket.subarray(nextState.end + 2);
+        } else {
+            console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login packet...`);
+
+            loginPacket = await asyncSocket.get();
+        }
+
+        const login = Packet.fromBuffer(loginPacket);
+
+        const username = DataTypes.String.decode(login.data);
+        const hasUUID = DataTypes.Boolean.decode(login.data, username.end);
+
+        if (!hasUUID.value) {
+            console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Client does not have UUID`);
+
+            socket.write(createDisconnect('Client does not have UUID'));
+
+            socket.end();
+
+            return;
+        }
+
+        const uuid = DataTypes.UUID.decode(login.data, hasUUID.end);
+
+        const serverSocket = net.createConnection({
+            host: requestedServer.private_address,
+            port: requestedServer.port
+        });
+
+        serverSocket.on('error', (err) => {
+            console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[0m ${err}`);
+
+            socket.end();
+        });
+
+        const serverAsyncSocket = new AsyncSocket(serverSocket);
+
+        await serverAsyncSocket.waitUntilConnected();
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, editing handshake packet...`);
+
+        const newHost = Buffer.concat([
+            serverAddress.buffer,
+            Buffer.from([0x00]),
+            Buffer.from(sanitizeAddress(socket.remoteAddress)),
+            Buffer.from([0x00]),
+            Buffer.from(uuid.string_repr)
+        ]);
+
+        const newHandshake = new Packet(0, Buffer.concat([
+            VarInt.encodeVarInt(protocolVersion.value),
+            DataTypes.String.encode(newHost.toString()),
+            DataTypes.UnsignedShort.encode(serverPort.value),
+            VarInt.encodeVarInt(nextState.value)
+        ]));
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Edited handshake packet, stating pipe from server to client...`);
+
+        serverSocket.pipe(socket);
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Edited handshake packet, sending to server...`);
+
+        serverSocket.write(newHandshake.toBuffer());
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Sent handshake packet to server, sending login packet...`);
+
+        serverSocket.write(loginPacket);
+
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Finished packet modification, piping data...`);
+
+        socket.pipe(serverSocket);
+    } else {
         // connect to server and pipe data
-        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m State is not login, connecting to server...`);
+        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m IP forwarding is disabled, connecting to server...`);
 
         const serverSocket = net.createConnection({
             host: requestedServer.private_address,
@@ -137,6 +233,8 @@ const server = net.createServer(async (socket) => {
         });
 
         serverSocket.pipe(socket);
+
+        serverSocket.write(handshakePacket);
 
         for (let i = 0; i < asyncSocket.readBuffer.length; i++) {
             serverSocket.write(asyncSocket.readBuffer[i]);
@@ -152,91 +250,8 @@ const server = net.createServer(async (socket) => {
 
         serverSocket.on('connect', () => {
             console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, piping data...`);
-
-            serverSocket.write(handshakePacket);
         });
-
-        return;
     }
-
-    let loginPacket: Buffer;
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login data...`);
-
-    if (handshakePacket.length > (nextState.end + 2)) {
-        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Handshake packet has extra data, extracting login packet...`);
-
-        loginPacket = handshakePacket.subarray(nextState.end + 2);
-    } else {
-        console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Getting login packet...`);
-
-        loginPacket = await asyncSocket.get();
-    }
-
-    const login = Packet.fromBuffer(loginPacket);
-
-    const username = DataTypes.String.decode(login.data);
-    const hasUUID = DataTypes.Boolean.decode(login.data, username.end);
-
-    if (!hasUUID.value) {
-        console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Client does not have UUID`);
-
-        socket.write(createDisconnect('Client does not have UUID'));
-
-        socket.end();
-
-        return;
-    }
-
-    const uuid = DataTypes.UUID.decode(login.data, hasUUID.end);
-
-    const serverSocket = net.createConnection({
-        host: requestedServer.private_address,
-        port: requestedServer.port
-    });
-
-    serverSocket.on('error', (err) => {
-        console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[0m ${err}`);
-
-        socket.end();
-    });
-
-    const serverAsyncSocket = new AsyncSocket(serverSocket);
-
-    await serverAsyncSocket.waitUntilConnected();
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, editing handshake packet...`);
-
-    const newHost = Buffer.concat([
-        serverAddress.buffer,
-        Buffer.from([0x00]),
-        Buffer.from(sanitizeAddress(socket.remoteAddress)),
-        Buffer.from([0x00]),
-        Buffer.from(uuid.string_repr)
-    ]);
-
-    const newHandshake = new Packet(0, Buffer.concat([
-        VarInt.encodeVarInt(protocolVersion.value),
-        DataTypes.String.encode(newHost.toString()),
-        DataTypes.UnsignedShort.encode(serverPort.value),
-        VarInt.encodeVarInt(nextState.value)
-    ]));
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Edited handshake packet, stating pipe from server to client...`);
-
-    serverSocket.pipe(socket);
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Edited handshake packet, sending to server...`);
-
-    serverSocket.write(newHandshake.toBuffer());
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Sent handshake packet to server, sending login packet...`);
-
-    serverSocket.write(loginPacket);
-
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Finished packet modification, piping data...`);
-
-    socket.pipe(serverSocket);
 });
 
 server.listen(25565, () => {
