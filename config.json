@@ -1,16 +1,24 @@
 {
-    "servers": [
-        {
-            "public_address": "localhost",
-            "private_address": "127.0.0.1",
-            "port": 25560
-        },
-        {
-            "public_address": "127.0.0.1",
-            "private_address": "127.0.0.1",
-            "port": 25561,
-            "ip_forwarding": false
-        }
-    ],
-    "error_file": "./error.png"
+  "servers": [
+    {
+      "public_address": "localhost",
+      "private_address": "127.0.0.1",
+      "port": 25560
+    },
+    {
+      "public_address": "127.0.0.1",
+      "private_address": "127.0.0.1",
+      "port": 25561,
+      "ip_forwarding": false
+    },
+    {
+      "public_address": "192.168.1.76",
+      "private_address": "192.168.1.201",
+      "port": 25565,
+      "ip_forwarding": false
+    }
+  ],
+  "error_file": "./error.png",
+  "listen_port": 25565,
+  "listen_address": "0.0.0.0"
 }

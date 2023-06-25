@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 
 export type Server = {
     public_address: string;
@@ -10,6 +11,8 @@ export type Server = {
 export type Configuration = {
     servers: Server[];
     error_file?: string;
+    listen_port: number;
+    listen_address?: string;
 }
 
 export default class Config {
@@ -20,6 +23,12 @@ export default class Config {
 
         if (!this.validate()) {
             throw new Error('Invalid configuration');
+        }
+
+        const server = this.check_listen_loop();
+
+        if (server) {
+            throw new Error(`Invalid listen address - server \`${server.public_address} -> ${server.private_address}:${server.port}\` will loop back to the proxy, causing a stack overflow and crashing the proxy`);
         }
     }
 
@@ -80,7 +89,60 @@ export default class Config {
             return false;
         }
 
+        if (!this._config.listen_port) {
+            console.error('No listen port defined');
+
+            return false;
+        }
+
+        if (isNaN(this._config.listen_port)) {
+            console.error('Listen port is not a number');
+
+            return false;
+        }
+
+        if (this._config.listen_address && typeof this._config.listen_address !== 'string') {
+            console.error('Listen address is not a string');
+
+            return false;
+        }
+
         return true;
+    }
+
+    public check_listen_loop(): null | Server {
+        // Check if the listen address is the same as any of the server addresses
+        // If it is, then we have a loop, throw an error
+        const ifaces = os.networkInterfaces();
+
+        for (const iface in ifaces) {
+            for (const address of ifaces[iface]) {
+                // loop through each server and check if the address is the same and the port is the same
+                for (const server of this.servers) {
+                    if (server.private_address === address.address && server.port === this.listen_port) {
+                        console.error('Listen address is the same as a server address');
+
+                        return server;
+                    }
+                }
+            }
+        }
+
+        // check 0.0.0.0
+        if (this.listen_address === '0.0.0.0' || this.listen_address === '::') {
+            // check port of each server
+            for (const server of this.servers) {
+                if (Object.values(ifaces).some((iface) => iface.some((address) => address.address === server.private_address))) {
+                    if (server.port === this.listen_port) {
+                        console.error('Listen address is the same as a server address');
+
+                        return server;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     public get servers(): Server[] {
@@ -89,5 +151,13 @@ export default class Config {
 
     public get error_file(): string | undefined {
         return this._config.error_file;
+    }
+
+    public get listen_port(): number {
+        return this._config.listen_port;
+    }
+
+    public get listen_address(): string {
+        return this._config.listen_address || '0.0.0.0';
     }
 }

@@ -1,4 +1,6 @@
-export type ChatComponent = string | TranslationComponent | KeybindComponent | ScoreComponent | SelectorComponent | NBTComponent | {
+export type ChatComponent = TranslationComponent | KeybindComponent | ScoreComponent | SelectorComponent | NBTComponent | MainChatComponent;
+
+export type MainChatComponent = {
     text?: string;
     bold?: boolean;
     italic?: boolean;

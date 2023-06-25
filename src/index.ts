@@ -6,6 +6,7 @@ import ip6addr from 'ip6addr';
 import AsyncSocket from './asyncSocket';
 import fs from 'fs';
 import Config from './config';
+import ChatBuilder from './chatBuilder';
 
 const config = new Config('./config.json');
 
@@ -20,14 +21,8 @@ export enum ConnectionState {
     Play = 3
 }
 
-function createDisconnect(reason: string) {
-    const jsonObj = {
-        text: reason
-    };
-
-    const json = JSON.stringify(jsonObj);
-
-    const newPacket = new Packet(0, DataTypes.String.encode(json));
+function createDisconnect(text: ChatBuilder) {
+    const newPacket = new Packet(0, text.encode());
 
     return newPacket.toBuffer();
 }
@@ -61,10 +56,10 @@ const server = net.createServer(async (socket) => {
 
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Got handshake packet`);
 
-    const protocolVersion = VarInt.decodeVarInt(handshake.data);
+    const protocolVersion = DataTypes.VarInt.decode(handshake.data);
     const serverAddress = DataTypes.String.decode(handshake.data, protocolVersion.end);
     const serverPort = DataTypes.UnsignedShort.decode(handshake.data, serverAddress.end);
-    const nextState = VarInt.decodeVarInt(handshake.data, serverPort.end);
+    const nextState = DataTypes.VarInt.decode(handshake.data, serverPort.end);
 
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Protocol version: ${protocolVersion.value}`);
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server address: ${serverAddress.value}`);
@@ -77,7 +72,12 @@ const server = net.createServer(async (socket) => {
         console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server not found`);
 
         if (nextState.value === ConnectionState.Login) {
-            socket.write(createDisconnect('Server not found'));
+            const chat = ChatBuilder
+                .text('Server not found')
+                .bold(true)
+                .color('red');
+
+            socket.write(createDisconnect(chat));
         } else {
             // mimic status ping
             const statusPacket = new Packet(0, DataTypes.String.encode(JSON.stringify({
@@ -142,6 +142,10 @@ const server = net.createServer(async (socket) => {
                 serverSocket.write(handshakePacket);
             });
 
+            socket.on('end', () => {
+                serverSocket.end();
+            });
+
             return;
         }
 
@@ -167,7 +171,12 @@ const server = net.createServer(async (socket) => {
         if (!hasUUID.value) {
             console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Client does not have UUID`);
 
-            socket.write(createDisconnect('Client does not have UUID'));
+            const chat = ChatBuilder
+                .text('Client does not have UUID')
+                .bold(true)
+                .color('red');
+
+            socket.write(createDisconnect(chat));
 
             socket.end();
 
@@ -251,9 +260,13 @@ const server = net.createServer(async (socket) => {
         serverSocket.on('connect', () => {
             console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${serverSocket.remoteAddress}:${serverSocket.remotePort} \x1b[36m${serverSocket.localAddress}:${serverSocket.localPort}\x1b[0m Connected, piping data...`);
         });
+
+        socket.on('end', () => {
+            serverSocket.end();
+        });
     }
 });
 
-server.listen(25565, () => {
+server.listen(config.listen_port, config.listen_address, () => {
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[0m Listening on port 25565`);
 });
