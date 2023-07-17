@@ -6,6 +6,10 @@ export type Server = {
     private_address: string;
     port: number;
     ip_forwarding?: boolean;
+    // TODO: finish adding support for a websocket mode
+    use_websocket?: boolean;
+    websocket_port?: number;
+    websocket_host?: string;
 }
 
 export type Configuration = {
@@ -81,6 +85,30 @@ export default class Config {
 
                 return false;
             }
+
+            if (server.use_websocket && typeof server.use_websocket !== 'boolean') {
+                console.error('Use websocket is not a boolean');
+
+                return false;
+            }
+
+            if (server.websocket_port && isNaN(server.websocket_port)) {
+                console.error('Websocket port is not a number');
+
+                return false;
+            }
+
+            if (server.websocket_host && typeof server.websocket_host !== 'string') {
+                console.error('Websocket host is not a string');
+
+                return false;
+            }
+
+            if (server.use_websocket && !server.websocket_port) {
+                console.error('Websocket port is not defined');
+
+                return false;
+            }
         }
 
         if (this._config.error_file && typeof this._config.error_file !== 'string') {
@@ -120,7 +148,13 @@ export default class Config {
                 // loop through each server and check if the address is the same and the port is the same
                 for (const server of this.servers) {
                     if (server.private_address === address.address && server.port === this.listen_port) {
-                        console.error('Listen address is the same as a server address');
+                        console.error('Connect address is the same as a server address');
+
+                        return server;
+                    }
+
+                    if (server.websocket_host === address.address && server.websocket_port === this.listen_port) {
+                        console.error('Websocket address is already in use by main proxy');
 
                         return server;
                     }
@@ -134,7 +168,7 @@ export default class Config {
             for (const server of this.servers) {
                 if (Object.values(ifaces).some((iface) => iface.some((address) => address.address === server.private_address))) {
                     if (server.port === this.listen_port) {
-                        console.error('Listen address is the same as a server address');
+                        console.error('Connect address is the same as a server address');
 
                         return server;
                     }

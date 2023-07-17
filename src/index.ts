@@ -66,7 +66,9 @@ const server = net.createServer(async (socket) => {
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server port: ${serverPort.value}`);
     console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Next state: ${nextState.value}`);
 
-    const requestedServer = config.servers.find((server) => server.public_address === serverAddress.value);
+    const requestedServer = config.servers
+        .filter((server) => !server.use_websocket)
+        .find((server) => server.public_address === serverAddress.value);
 
     if (!requestedServer) {
         console.log(`\x1b[31m[${new Date().toLocaleString()}] \x1b[35m${socket.remoteAddress}:${socket.remotePort} \x1b[36m${socket.localAddress}:${socket.localPort}\x1b[0m Server not found`);
@@ -268,5 +270,5 @@ const server = net.createServer(async (socket) => {
 });
 
 server.listen(config.listen_port, config.listen_address, () => {
-    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[0m Listening on port 25565`);
+    console.log(`\x1b[32m[${new Date().toLocaleString()}] \x1b[0m Listening on \x1b[36m${config.listen_address}:${config.listen_port}\x1b[0m`);
 });
