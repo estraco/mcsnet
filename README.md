@@ -16,7 +16,7 @@ Disabling user authentication, or setting `online-mode` to `false` in the `serve
 ## Installation
 
 1. Clone the repository
-    - `git clone https://github.com/1nchhh/mcsnet.git`
+    - `git clone https://github.com/estraco/mcsnet.git`
 2. Install dependencies
     - `npm install`
 3. Build the project
