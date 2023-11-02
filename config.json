@@ -14,7 +14,7 @@
     {
       "public_address": "192.168.1.76",
       "private_address": "192.168.1.201",
-      "port": 25565,
+      "port": 25566,
       "ip_forwarding": false
     }
   ],
